@@ -1,0 +1,13 @@
+CC = arm-linux-gcc
+RM = rm
+
+MODULES=main.o network.o gps.o modbus.o zigbee.o
+
+LedApp:${MODULES} 
+	$(CC) -O2 -Wall -D_REENTRANT -o LedApp ${MODULES} -lpthread
+
+${MODULES}:%.o: %.c %.h led.h
+
+clean:
+	${RM} -f *.o LedApp
+

@@ -1,0 +1,10 @@
+---- elec_on_fwa_flag Matches (11 in 2 files) ----
+Modbus.c:int elec_on_fwa_flag=0;//ARM上电，且小车直接后退
+Modbus.c:			elec_on_fwa_flag=0;
+Modbus.c:				elec_on_fwa_flag=1;//2017/8/26 为了使ARM上电，且小车直接后退时候，灯不灭，只有上电后往前走此值赋为1，否则为0
+Modbus.c:				DBGMSG("LINE=%d,qianjin  elec_on_fwa_flag=%d\n",__LINE__,elec_on_fwa_flag);
+Modbus.c:					elec_on_fwa_flag=1;//2017/8/26为了使ARM上电，且小车直接后退时候，灯不灭，
+Modbus.c:						DBGMSG("LINE=%d,elec_on_fwa_flag=%d\n",elec_on_fwa_flag);
+Modbus.c:						if(elec_on_fwa_flag==1)//2017/8/26为了使ARM上电，且小车直接后退时候，灯不灭，只有在小车有前进再后退的情况elec_on_fwa_flag=1，如果直接上电就后退此值为0，不执行后面代码
+ModbusNodata.c:extern int elec_on_fwa_flag;
+ModbusNodata.c:			elec_on_fwa_flag=0;

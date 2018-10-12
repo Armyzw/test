@@ -1,0 +1,782 @@
+#include "zigbee.h"
+
+static int sg_iFd=0;
+
+static unsigned char sg_ucaRxMsg[256];
+static unsigned char sg_uclocal[256];//2017/8/8
+static unsigned short sg_wRxMsgLen;
+static unsigned char sg_ucHeadA,sg_ucHeadB;
+static unsigned short host_Addr;//2017/8/8
+static void MainLoop(void);
+static void SendMsgWithPackage(unsigned char *pucBuffer, unsigned short wLen);
+static void SendMsg(unsigned char *pucBuffer, unsigned short wLen);
+static void RxMsgParse(unsigned char *pucBuffer, unsigned short wLen);
+struct SZigbeeDevInfo zigbeeInfo;
+//"0x38 0x38 0x38 0x38 0x38 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00"};
+char szDevName1[]={0x5a,0x4c,0x47,0x20,0x44,0x65,0x76,0x69,0x63,0x65,0x00,0x00,0x00,0x00,0x00,0x00};
+
+void func_zigbee_thread(int *iFd)
+{
+    //设置线程为可取消
+    if (pthread_setcancelstate (PTHREAD_CANCEL_ENABLE , NULL))
+    {
+        perror ("Zigbee thread setcancelstate failed");
+        pthread_exit(NULL);
+    }
+    
+    if (!iFd)
+        pthread_exit(NULL);
+    sg_iFd=*iFd;
+    if (sg_iFd<=0)
+        pthread_exit(NULL);
+   /*zhangmodify2017/8/8*/     
+    zigbee_read_local_config();
+  	printf("zigbee_read_local_config\n");
+
+  	memcpy(zigbeeInfo.szDevName,szDevName1,16);
+
+  
+     /*zhangmodify2017/8/8*/   
+    while(true)    
+  {
+  	
+  	 MainLoop();
+  	 	  
+  } 
+
+    pthread_exit(NULL);
+}
+
+static void MainLoop(void)
+{
+    unsigned char *pucBuffer=NULL;
+    short i, nLen;
+
+    pucBuffer=malloc(512);
+
+    nLen=read(sg_iFd, pucBuffer, 512);
+    
+    if (nLen<=0)
+        goto End;
+
+    DBGMSG("\nZigbee recv %d data: ", nLen);
+    for(i=0;i<nLen;i++)
+        DBGMSG("%02X ", pucBuffer[i]);
+    DBGMSG("\n");
+
+    RxMsgParse(pucBuffer, nLen);
+    
+End:
+    free(pucBuffer);
+}
+
+void SendMsgWithPackage(unsigned char *pucBuffer, unsigned short wLen)
+{
+    unsigned char *pucFrame=malloc(wLen+4);
+    unsigned short i, wFrameLen=0;
+
+    assert(pucBuffer);
+
+    //帧头
+    pucFrame[wFrameLen++]=0xEA;
+    pucFrame[wFrameLen++]=0xEB;
+    pucFrame[wFrameLen++]=0xEC;
+
+    //功能段长度
+    pucFrame[wFrameLen++]=wLen;
+
+    //数据区
+    memcpy(&pucFrame[wFrameLen], pucBuffer, wLen);
+    wFrameLen+=wLen;
+
+    write(sg_iFd, pucFrame, wFrameLen);
+    
+    DBGMSG("Zigbee send %d data: ", wFrameLen);
+    for(i=0;i<wFrameLen;i++)
+        DBGMSG("%02X ", pucFrame[i]);
+    DBGMSG("\n");
+
+    free(pucFrame);
+}
+
+void SendMsg(unsigned char *pucBuffer, unsigned short wLen)
+{
+    unsigned short i;
+
+    assert(pucBuffer);
+    
+    write(sg_iFd, pucBuffer, wLen);
+
+    DBGMSG("Zigbee send %d data: ", wLen);
+    for(i=0;i<wLen;i++)
+        DBGMSG("%02X ", pucBuffer[i]);
+    DBGMSG("\n");
+}
+
+unsigned char AccountSum(unsigned char *pucBuffer, unsigned short wLen)
+{
+    unsigned short i;
+    unsigned char ucSum=0;
+
+    assert(pucBuffer);
+    
+    for(i=0;i<wLen;i++)
+        ucSum+=pucBuffer[i];
+    
+    return ucSum;
+}
+
+void zigbee_temp_modify_chan(unsigned char ucChan)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xD1;
+
+    //通道
+    pucBuffer[wLen++]=ucChan;
+
+    DBGMSG("临时修改通道号为 %02x\n", ucChan);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+
+void zigbee_temp_modify_dstaddr(unsigned short wAddr)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xD2;
+    
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+
+    DBGMSG("临时修改目的网络地址 %04x\n", wAddr);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+}
+
+void zigbee_temp_modify_visible(bool bVisible)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xD3;
+
+    //是否显示
+    pucBuffer[wLen++]=bVisible;
+
+    DBGMSG("临时修改包头显示源地址 %02x\n", bVisible);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_temp_set_comm_mode(unsigned char ucMode)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xD9;
+
+    //模式
+    pucBuffer[wLen++]=ucMode;
+
+    DBGMSG("临时设置通讯模式 %02x\n", ucMode);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_query_signal_strength(unsigned short wAddr)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xDA;
+
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+
+    DBGMSG("查询节点信号强度 %04x\n", wAddr);
+
+    SendMsg(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+
+void zigbee_read_local_config(void)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+     //命令码
+    pucBuffer[wLen++]=0xD1;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("读取本地配置指令\n");
+		printf("zigbee_read_local_config sendmeg\n");
+    //SendMsgWithPackage(pucBuffer, wLen);
+		SendMsg(pucBuffer,wLen);
+    free(pucBuffer);
+}
+
+
+void zigbee_always_modify_chan(unsigned char ucChan)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xD2;
+
+    //通道
+    pucBuffer[wLen++]=ucChan;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("永久修改通道号为 %02x\n", ucChan);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_query_online_node(void)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xD4;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("搜索在线节点\n");
+
+    SendMsg(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_read_remote_config(unsigned short wAddr)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xD5;
+
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("获取远程配置信息 %04x\n", wAddr);
+
+    SendMsg(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_modify_remote_config(unsigned short wAddr, struct SZigbeeDevInfo *psDevInfo)
+{
+    unsigned char *pucBuffer=malloc(128);
+    unsigned short wLen=0;
+    unsigned char i;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xD6;
+
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+    
+    //设备名称
+    for (i=0;i<16;i++)
+        pucBuffer[wLen++]=psDevInfo->szDevName[i];
+
+    //设备密码
+    for (i=0;i<16;i++)
+        pucBuffer[wLen++]=psDevInfo->szDevPwd[i];
+    
+    //设备类型
+    pucBuffer[wLen++]=psDevInfo->ucDevMode;
+
+    //通道号
+    pucBuffer[wLen++]=psDevInfo->ucChan;
+
+    //网络ID
+    pucBuffer[wLen++]=psDevInfo->wPanID>>8;
+    pucBuffer[wLen++]=psDevInfo->wPanID&0xff;
+
+    //本地网络地址
+    pucBuffer[wLen++]=psDevInfo->wMyAddr>>8;
+    pucBuffer[wLen++]=psDevInfo->wMyAddr&0xff;
+
+    //本地本地物理地址
+    for (i=0;i<8;i++)
+        pucBuffer[wLen++]=psDevInfo->szMyIEEE[i];
+
+    //目标网络地址
+    pucBuffer[wLen++]=psDevInfo->wDstAddr>>8;
+    pucBuffer[wLen++]=psDevInfo->wDstAddr&0xff;
+
+    //目标本地物理地址
+    for (i=0;i<8;i++)
+        pucBuffer[wLen++]=psDevInfo->szDstIEEE[i];
+
+    //保留
+    pucBuffer[wLen++]=psDevInfo->ucReserve;
+
+    //发射功率
+    pucBuffer[wLen++]=psDevInfo->ucPowerLevel;
+
+    //发送数据重试次数
+    pucBuffer[wLen++]=psDevInfo->ucRetryNum;
+
+    //发送数据重试时间间隔
+    pucBuffer[wLen++]=psDevInfo->ucTranTimeOut;
+
+    //串口波特率
+    pucBuffer[wLen++]=psDevInfo->ucSerialRate;
+
+    //串口数据位
+    pucBuffer[wLen++]=psDevInfo->ucSerialDataB;
+
+    //串口停止位
+    pucBuffer[wLen++]=psDevInfo->ucSerialStopB;
+
+    //串口校验位
+    pucBuffer[wLen++]=psDevInfo->ucSerialParityB;
+
+    //发送模式
+    pucBuffer[wLen++]=psDevInfo->ucSendMode;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("修改配置信息 %04x\n", wAddr);
+
+  //  SendMsgWithPackage(pucBuffer, wLen);
+		SendMsg(pucBuffer, wLen);
+    free(pucBuffer);
+}
+
+void zigbee_reset_node(unsigned short wAddr, unsigned short wType)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xD9;
+
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+
+    //类型
+    pucBuffer[wLen++]=wType>>8;
+    pucBuffer[wLen++]=wType&0xff;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("复位节点 %04x:%04x\n", wAddr, wType);
+
+    SendMsg(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_restore_factory_defaults(unsigned short wAddr, unsigned short wType)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xAB;
+    pucBuffer[wLen++]=0xBC;
+    pucBuffer[wLen++]=0xCD;
+
+    //命令码
+    pucBuffer[wLen++]=0xDA;
+
+    //地址
+    pucBuffer[wLen++]=wAddr>>8;
+    pucBuffer[wLen++]=wAddr&0xff;
+
+    //类型
+    pucBuffer[wLen++]=wType>>8;
+    pucBuffer[wLen++]=wType&0xff;
+
+    //校验
+    pucBuffer[wLen]=AccountSum(pucBuffer, wLen);
+    wLen++;
+
+    DBGMSG("恢复出厂设置 %04x:%04x\n", wAddr, wType);
+
+    SendMsg(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+void zigbee_temp_dimming_node(unsigned char ucLevel)
+{
+    unsigned char *pucBuffer=malloc(16);
+    unsigned short wLen=0;
+
+    //功能码
+    pucBuffer[wLen++]=0xDE;
+    pucBuffer[wLen++]=0xDF;
+    pucBuffer[wLen++]=0xEF;
+
+    //命令码
+    pucBuffer[wLen++]=0xDB;
+
+    //模式
+    pucBuffer[wLen++]=ucLevel;
+
+    DBGMSG("设置节点亮度级别为 %02x\n", ucLevel);
+
+    SendMsgWithPackage(pucBuffer, wLen);
+
+    free(pucBuffer);
+}
+
+static void RxMsgParse(unsigned char *pucBuffer, unsigned short wLen)
+{
+    unsigned short i;
+
+    for(i=0;i<wLen;i++)
+    {
+        if (sg_wRxMsgLen>=255)
+        {
+            sg_wRxMsgLen=0;
+            sg_ucHeadA=0;
+            sg_ucHeadB=0;
+        }
+    
+        sg_ucaRxMsg[sg_wRxMsgLen++]=pucBuffer[i];
+
+        //DE、DF、EF报文头
+        if (pucBuffer[i]==0xDE && sg_ucHeadA==0)
+            sg_ucHeadA=1;
+        else if (pucBuffer[i]==0xDF && sg_ucHeadA==1)
+            sg_ucHeadA=2;
+        else if (pucBuffer[i]==0xEF && sg_ucHeadA==2)
+            sg_ucHeadA=3;
+
+        //AB、BC、CD报文头
+        else if (pucBuffer[i]==0xAB && sg_ucHeadB==0)
+            sg_ucHeadB=1;
+        else if (pucBuffer[i]==0xBC && sg_ucHeadB==1)
+            sg_ucHeadB=2;
+        else if (pucBuffer[i]==0xCD && sg_ucHeadB==2)
+            sg_ucHeadB=3;
+
+        //报文出错,复位
+        else if (sg_ucHeadA!=3 && sg_ucHeadB!=3)
+        {
+            sg_wRxMsgLen=0;
+            sg_ucHeadA=0;
+            sg_ucHeadB=0;
+        }
+
+        else if (sg_wRxMsgLen>4)
+        {
+            //功能码
+            switch (sg_ucaRxMsg[3])
+            {
+                case 0xD1:
+                    if (sg_ucHeadA==3)
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_temp_modify_chan_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==74)
+                        {
+                           // zigbee_read_local_config_answ();
+                            /*zhangmodify2017/8/8*/  
+                             for(i=0;i<74;i++)
+   													 {
+       													sg_uclocal[i]=sg_ucaRxMsg[i];
+        												
+   												   }
+                           	
+                           	host_Addr=0x2001;
+														sg_uclocal[39]=0x20;
+														sg_uclocal[40]=0x02;
+														sg_uclocal[49]=0x00;
+														sg_uclocal[50]=0x01;
+														zigbee_modify_remote_config(host_Addr,sg_uclocal);
+                              /*zhangmodify2017/8/8*/ 
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    break;
+
+                case 0xD2:
+                    if (sg_ucHeadA==3)
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_temp_modify_dstaddr_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_always_modify_chan_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    break;
+
+                case 0xD3:
+                    if (sg_ucHeadA==3)
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_temp_modify_visible_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    else 
+                    {
+                        printf("功能码(0xD3)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    break;
+
+                case 0xD4:
+                    if (sg_ucHeadA==3)
+                    {
+                        printf("功能码(0xD4)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==13)
+                        {
+                            //zigbee_query_online_node_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+
+                case 0xD5:
+                    if (sg_ucHeadA==3)
+                    {
+                        printf("功能码(0xD5)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==74)
+                        {
+                            //zigbee_read_remote_config_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+
+                case 0xD6:
+                    if (sg_ucHeadA==3)
+                    {
+                        printf("功能码(0xD6)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==7)
+                        {
+                            //zigbee_modify_remote_config_answ();
+                              /*zhangmodify2017/8/8*/  
+                            int i;
+                            printf("sg_uclocal[i]=\n");
+                            for(i=0;i<74;i++)
+                            {
+                            	printf("%02x ",sg_ucaRxMsg[i]);
+                           	}
+                           	printf("\n");
+                              /*zhangmodify2017/8/8*/ 
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+
+                case 0xD9:
+                    if (sg_ucHeadA==3)
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_temp_set_comm_mode_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    else 
+                    {
+                        printf("功能码(0xD9)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    break;
+
+                case 0xDA:
+                    if (sg_ucHeadA==3)
+                    {
+                        if (sg_wRxMsgLen==7)
+                        {
+                            //zigbee_query_signal_strength_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==9)
+                        {
+                            //zigbee_restore_factory_defaults_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    break;
+
+                case 0xDB:
+                    if (sg_ucHeadA==3)
+                    {
+                        printf("功能码(0xDB)出错!\n");
+                        sg_wRxMsgLen=0;
+                        sg_ucHeadA=0;
+                        sg_ucHeadB=0;
+                    }
+                    else 
+                    {
+                        if (sg_wRxMsgLen==5)
+                        {
+                            //zigbee_temp_dimming_node_answ();
+                            sg_wRxMsgLen=0;
+                            sg_ucHeadA=0;
+                            sg_ucHeadB=0;
+                        }
+                    }
+                    break;
+            }
+        }
+    }    
+}

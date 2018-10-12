@@ -1,0 +1,115 @@
+[33mcommit 6d0f9e3a7e689b487c79dfdcba06645dc63dc10f[m
+Author: albert <13951756634@139.com>
+Date:   Fri Aug 10 15:47:03 2018 +0800
+
+    resize array size of light&zoon
+
+[33mcommit 6d71c860c28c40097c22bccccfa44da84b4c119c[m
+Author: albert <13951756634@139.com>
+Date:   Fri Aug 10 15:02:21 2018 +0800
+
+    read chan of zigbee from arm.db
+
+[33mcommit 5128f0d148ac22c8bef38000c369f69984095ff1[m
+Author: albert <13951756634@139.com>
+Date:   Thu Aug 9 01:08:53 2018 +0800
+
+    release 1.0
+
+[33mcommit fd9effe9faef2b7881789c9eaded9c24d068dbb8[m
+Author: albert <13951756634@139.com>
+Date:   Thu Aug 9 01:02:21 2018 +0800
+
+    use alloc/release sem to access zigbee
+
+[33mcommit d90635b77f4cd0413e73e40e3598ab9b2e085374[m
+Author: albert <13951756634@139.com>
+Date:   Wed Aug 1 23:18:03 2018 +0800
+
+    modbus read infomation from cfg, anqiao.db
+
+[33mcommit f5a274388827caff53906822408d4edcb1773c82[m
+Author: albert <13951756634@139.com>
+Date:   Wed Aug 1 08:34:48 2018 +0800
+
+    network
+    
+    fix can't read full message from LTE module
+
+[33mcommit 6413e2ba3e3107d20816a9997ade3397101c5883[m
+Author: albert <13951756634@139.com>
+Date:   Tue Jul 24 00:11:12 2018 +0800
+
+    enable modbus
+
+[33mcommit 62525e6222e927f67d28f7bef00908f42cc46ecc[m
+Author: albert <13951756634@139.com>
+Date:   Wed Jul 18 23:04:08 2018 +0800
+
+    stable 0.4 version
+    
+    reset LTE module when conmunication is lost
+
+[33mcommit 2aebf35383238bfb1cffb75673e438f6fa2fb377[m
+Author: albert <13951756634@139.com>
+Date:   Mon Jul 16 22:33:22 2018 +0800
+
+    stable 0.3 version
+    
+    calc power every 3 miniutes
+
+[33mcommit 3299ac5bbcf21a7fb43c5c5d13bb5fd9200e1bdc[m
+Author: albert <13951756634@139.com>
+Date:   Sun Jul 15 11:37:43 2018 +0800
+
+    add power calc
+
+[33mcommit 31b37977e764cd8bc9085f6a07daaeff88a0cbed[m
+Author: albert <13951756634@139.com>
+Date:   Sun Jul 15 09:45:52 2018 +0800
+
+    stable 0.2
+    
+    fix conmunicate with LTE
+
+[33mcommit b500380e92f3e48be0946a1c817a77fbd13a2c68[m
+Author: albert <13951756634@139.com>
+Date:   Tue Jul 10 23:36:19 2018 +0800
+
+    stable version 0.1
+    
+    fix can't read all package from  LTE network on uart
+    
+    disable sem_wait because sometimes will block all process
+
+[33mcommit 1d6760b365a616950c02e75a2606ea911687ab6b[m
+Author: albert <13951756634@139.com>
+Date:   Mon Jul 9 14:17:22 2018 +0800
+
+    clear some log print
+
+[33mcommit 9cf669352df54f6d8f020202637550d240225830[m
+Author: albert <13951756634@139.com>
+Date:   Mon Jul 9 14:04:00 2018 +0800
+
+    1.Zigbee, add semaphore to protect fd in multi-thread
+    2.Zigbee, add global array xg_ZigbeeData to transfer data
+    3.protocol, rewrite parse 0x2 cmd to set more than one light
+
+[33mcommit aacf61b3383b58f52d15785f26991590ff502372[m
+Author: albert <13951756634@139.com>
+Date:   Fri Jul 6 14:58:44 2018 +0800
+
+    1.use LTE for default network, 2.add semaphore for zigbee fd
+
+[33mcommit c2e58b70fb5a02d1697b186ebb84dabe583f72b7[m
+Author: albert <13951756634@139.com>
+Date:   Thu Jul 5 17:20:27 2018 +0800
+
+    add .gitignore , open LTE in main
+
+[33mcommit e3b0797d3ffdabd9c3d70dac6ead91ed3f21f56f[m
+Author: albert <13951756634@139.com>
+Date:   Thu Jul 5 16:53:52 2018 +0800
+
+    quanzhou 12 init version

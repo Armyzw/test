@@ -1,0 +1,164 @@
+#include "zigbee.h"
+#include "main.h"
+
+//线程定义
+pthread_t g_sNetworkThread, g_sModbusThread, g_sZigbeeThread, g_sGpsThread;
+
+static int sg_iaFdCom[3];
+
+static void OpenModules(void)
+{
+    sg_iaFdCom[0] = open( "/dev/ttySP1", O_RDWR | O_NOCTTY);
+    if (sg_iaFdCom[0]<1)
+        perror("Can't open the /dev/ttySP1");
+    else
+        InitCom(sg_iaFdCom[0],B9600,NONE);
+
+    sg_iaFdCom[1] = open( "/dev/ttySP2", O_RDWR | O_NOCTTY);
+    if (sg_iaFdCom[1]<1)
+        perror("Can't open the /dev/ttySP2");
+    else
+        InitCom(sg_iaFdCom[1],B9600,EVEN);//偶校验
+        
+    sg_iaFdCom[2] = open( "/dev/ttySP0", O_RDWR | O_NOCTTY);
+    if (sg_iaFdCom[2]<1)
+        perror("Can't open the /dev/ttySP0");
+    else
+        InitCom(sg_iaFdCom[2],B9600,NONE);
+}
+
+static void CloseModules(void)
+{
+    if (sg_iaFdCom[0]>0)
+    {
+        (void)close (sg_iaFdCom[0]);
+        sg_iaFdCom[0]=0;
+    }
+   
+    if (sg_iaFdCom[1]>0)
+    {
+        (void)close (sg_iaFdCom[1]);
+        sg_iaFdCom[1]=0;
+    }
+
+    if (sg_iaFdCom[2]>0)
+    {
+        (void)close (sg_iaFdCom[2]);
+        sg_iaFdCom[2]=0;
+    }
+}
+
+static void CreatThread(void)
+{
+    if (pthread_create (&g_sNetworkThread, NULL , (void *)&func_network_thread, NULL))
+        perror("Network thread create failed");
+
+    if (pthread_create (&g_sModbusThread, NULL , (void *)&func_modbus_thread, &sg_iaFdCom[1]))
+        perror("Modbus thread create failed");
+
+    if (pthread_create (&g_sZigbeeThread, NULL , (void *)&func_zigbee_thread, &sg_iaFdCom[2]))
+        perror("Zigbee thread create failed");
+
+    if (pthread_create (&g_sGpsThread , NULL , (void *)&func_gps_thread, &sg_iaFdCom[0]))
+        perror("Zigbee thread create failed");
+}
+
+static void CancelThread(void)
+{
+    if (pthread_cancel(g_sNetworkThread))
+        perror("Network thread cancel failed");
+
+    if (pthread_cancel(g_sModbusThread))
+        perror("Modbus thread cancel failed");
+
+    if (pthread_cancel(g_sZigbeeThread))
+        perror("Zigbee thread cancel failed");
+
+    if (pthread_cancel(g_sGpsThread))
+        perror("Gps thread cancel failed");
+}
+
+
+//####### 初始化串口 #######//
+static void InitCom(int iFd, unsigned int dwBaudrate, unsigned char ucVerify)
+{
+    struct termios sTermios;
+
+    memset(&sTermios,0,sizeof(sTermios));       //清空串口设置结构体
+    
+    sTermios.c_cflag = CLOCAL | CREAD; //CLOCAL:本地连接, CREAD:允许接收数据
+
+    (void)cfsetispeed(&sTermios,dwBaudrate);
+    (void)cfsetospeed(&sTermios,dwBaudrate);
+
+    if (ucVerify>0)
+    {
+        sTermios.c_cflag |= PARENB;       //Enable parity bit
+
+        if (ucVerify==1)
+            sTermios.c_cflag |= PARODD;   //Use odd parity instead of even
+        else
+            sTermios.c_cflag &= ~PARODD;  //Use even parity instead of odd
+    }
+    else
+        sTermios.c_cflag &=~ PARENB;      //Disable parity bit
+
+    
+    sTermios.c_cflag &= ~CSTOPB;  // 1 stop bits 
+    sTermios.c_cflag &= ~CSIZE;       // Mask the character size bits 
+    sTermios.c_cflag |= CS8;      // Select 8 data bits 
+    
+    //不处理，原始数据输入
+    sTermios.c_lflag = 0;
+    
+    //INPCK   : 奇偶校验检查    
+    sTermios.c_iflag = INPCK;
+
+    //不处理，原始数据输出
+    sTermios.c_oflag = 0;     
+
+    sTermios.c_cc[VINTR]      = 0;        // Ctrl+c  
+    sTermios.c_cc[VQUIT]      = 0;        /*Ctrl+\*/ 
+    sTermios.c_cc[VERASE]     = 0;        // del 
+    sTermios.c_cc[VKILL]      = 0;        // @ 
+    sTermios.c_cc[VEOF]       = 4;        // Ctrl+d 
+    sTermios.c_cc[VTIME]      = 0;        // 不使用字符间的计时器
+    sTermios.c_cc[VMIN]       = 1;        // 阻塞，直到读取到一个字符
+    sTermios.c_cc[VSWTC]      = 0;        // '' 
+    sTermios.c_cc[VSTART]     = 0;        // Ctrl+q 
+    sTermios.c_cc[VSTOP]      = 0;        // Ctrl+s 
+    sTermios.c_cc[VSUSP]      = 0;        // Ctrl+z 
+    sTermios.c_cc[VEOL]       = 0;        // '' 
+    sTermios.c_cc[VREPRINT]   = 0;        // Ctrl+r 
+    sTermios.c_cc[VDISCARD]   = 0;        // Ctrl+u 
+    sTermios.c_cc[VWERASE]    = 0;        // Ctrl+w 
+    sTermios.c_cc[VLNEXT]     = 0;        // Ctrl+v 
+    sTermios.c_cc[VEOL2]      = 0;        // '' 
+
+    (void)tcflush(iFd, TCIFLUSH);
+    (void)tcsetattr(iFd,TCSANOW,&sTermios);
+}
+
+
+int main(int argc, char **argv)
+{
+    signal(SIGPIPE,SIG_IGN);
+
+    //打开模块
+    OpenModules();
+    
+    //创建线程
+    CreatThread();
+
+    while(true)
+    {
+        (void)sleep(1);
+    }
+
+    CancelThread();
+
+    CloseModules();
+    
+    return EXIT_SUCCESS;
+}
+
